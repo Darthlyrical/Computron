@@ -255,7 +255,13 @@ class ClaudeCodeSession:
 
         try:
             reply, cost, is_error, saw_denied = self._ask_once(text)
-        except RuntimeError:
+        except (RuntimeError, OSError):
+            # OSError covers BrokenPipeError: the subprocess can die before
+            # we even finish writing to its stdin (e.g. --resume-ing a
+            # session ID that only exists on another machine), which is a
+            # different failure point than the read-side RuntimeError below
+            # but means the same thing — treat it the same way so the
+            # stale-resume retry logic actually gets a chance to run.
             reply, cost, is_error, saw_denied = None, 0.0, True, False
 
         # A resume attempt can fail without the process crashing (an
@@ -271,7 +277,7 @@ class ClaudeCodeSession:
             self._last_total_cost = 0.0
             try:
                 reply, cost, is_error, saw_denied = self._ask_once(text)
-            except RuntimeError as e:
+            except (RuntimeError, OSError) as e:
                 reply, cost = f"Something went wrong: {e}", 0.0
 
         self._first_call_done = True
