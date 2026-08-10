@@ -78,6 +78,7 @@ def speak(text: str):
     piper_cmd = [
         config.PIPER_BIN,
         "--model", config.PIPER_VOICE,
+        "--length-scale", str(config.PIPER_LENGTH_SCALE),
         "--output_file", str(out_wav),
     ]
     try:
