@@ -139,6 +139,30 @@ you'll see a note printed in the terminal, but the answer itself won't be an
 error message. To force a fresh start deliberately, just delete
 `.session_id`.
 
+## Menu bar app — talk to it without a focused terminal
+
+`menubar_app.py` runs Computron as a persistent macOS menu bar app instead of
+a terminal loop. Same STT/TTS/backend underneath — only the trigger and UI
+are different:
+
+- **Hold Right Option (⌥) anywhere to talk** — a real hold-to-talk key, not a
+  toggle. Works no matter what app is focused. Configurable via
+  `COMPUTRON_HOTKEY_KEY` in `.env` (any name from `pynput.keyboard.Key`, e.g.
+  `alt_l`, `cmd_r`, `ctrl_r`).
+- Menu bar icon shows current state: 🎙 idle, 🔴 recording, ⏳ thinking, 🔊
+  speaking. A "Talk now" menu item does the same thing as the hotkey, click
+  to start, click again to stop, if you'd rather not hold a key.
+
+Run: `computron-menubar` (a launcher at `~/.local/bin/computron-menubar`,
+same pattern as `computron`).
+
+**Requires Accessibility permission** for the global hotkey to work —
+macOS prompts for it the first time the hotkey listener starts. If holding
+Right Option never triggers anything, check System Settings -> Privacy &
+Security -> Accessibility and make sure Terminal (or whatever's running
+Python) is allowed. This is a one-time manual grant; nothing in the code can
+do it for you.
+
 ## Known rough edges (v1)
 
 - Push-to-talk only (press Enter) — no wake word or always-listening yet
