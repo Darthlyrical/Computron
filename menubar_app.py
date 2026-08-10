@@ -23,6 +23,7 @@ import numpy as np
 import rumps
 import sounddevice as sd
 from pynput import keyboard
+from PyObjCTools import AppHelper
 
 import config
 from claude_code_backend import ClaudeCodeSession
@@ -49,6 +50,18 @@ class ComputronApp(rumps.App):
         self._stream = None
         self._lock = threading.Lock()
         self.menu = ["Talk now", None, "Quit Computron"]
+
+    def _set_tooltip(self, text):
+        # AppKit calls must happen on the main thread (macOS's Main Thread
+        # Checker traps otherwise, crashing the process) — _process_turn runs
+        # on a background thread, so this hops over via AppHelper.callAfter
+        # rather than touching nsstatusitem directly.
+        def _apply():
+            try:
+                self._nsapp.nsstatusitem.setToolTip_(text)
+            except AttributeError:
+                pass
+        AppHelper.callAfter(_apply)
 
     def start_session(self):
         self.title = ICON_THINKING
@@ -81,6 +94,7 @@ class ComputronApp(rumps.App):
             self._recording = True
         self._frames = []
         self.title = ICON_RECORDING
+        self._set_tooltip("Listening...")
         print("Recording...")
 
         def callback(indata, frames_count, time_info, status):
@@ -121,11 +135,14 @@ class ComputronApp(rumps.App):
         if not transcript:
             print("(Didn't catch that — try again.)")
             self.title = ICON_IDLE
+            self._set_tooltip("Didn't catch that — try again.")
             return
         print(f"You: {transcript}")
+        self._set_tooltip(f"You: {transcript}\n\nThinking...")
 
         reply, turn_cost = self.session.ask(transcript)
         print(f"Computron: {reply}  [+${turn_cost:.4f}]")
+        self._set_tooltip(f"You: {transcript}\n\nComputron: {reply}")
 
         self.title = ICON_SPEAKING
         speak(reply)

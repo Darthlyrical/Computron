@@ -23,6 +23,56 @@ from typing import Optional
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_FILE = os.path.join(PROJECT_DIR, ".session_id")
 CAPABILITIES_FILE = os.path.join(PROJECT_DIR, ".capabilities_fingerprint")
+PERSONALITY_FILE = os.path.join(PROJECT_DIR, "personality.json")
+
+# Not a secret, so — unlike .env — Computron can actually edit this itself
+# through the normal write-confirm flow: no built-in sensitive-file
+# classifier stands in the way. Read fresh on every process spawn (not
+# fingerprinted alongside SAFE_TOOLS/WRITE_TOOLS below) so a value Jorge
+# just changed takes effect on the very next respawn — which happens
+# automatically right after any confirmed write turn — without needing the
+# tool-permission drift machinery, which is a separate concern.
+DEFAULT_PERSONALITY = {"humor": 50, "sarcasm": 25, "bluntness": 70}
+
+
+def _read_personality() -> dict:
+    try:
+        with open(PERSONALITY_FILE) as f:
+            values = json.load(f)
+        return {**DEFAULT_PERSONALITY, **values}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return dict(DEFAULT_PERSONALITY)
+
+
+if not os.path.exists(PERSONALITY_FILE):
+    with open(PERSONALITY_FILE, "w") as f:
+        json.dump(DEFAULT_PERSONALITY, f, indent=2)
+
+
+def _personality_prompt_segment() -> str:
+    p = _read_personality()
+    return (
+        f"\n\nPersonality settings (0-100 each, current values — Jorge can "
+        f"ask you to change any of these mid-conversation): Humor: "
+        f"{p['humor']}/100 — how often genuine wit, wordplay, or a playful "
+        f"aside makes it into a reply; higher means being willing to be "
+        f"funny even when it's not strictly needed, lower means staying "
+        f"matter-of-fact. Sarcasm: {p['sarcasm']}/100 — how much dry, "
+        f"needling edge colors your tone; higher leans into ribbing him a "
+        f"little, lower stays warm and sincere. Bluntness: {p['bluntness']}"
+        f"/100 — how much you cushion an honest but unwelcome take before "
+        f"giving it; higher means the unfiltered version straight away, "
+        f"lower means softening it first. Actually let these numbers shape "
+        f"how you talk, don't just acknowledge them. If Jorge asks you to "
+        f"change one (e.g. 'turn your sarcasm up to 80' or 'be less "
+        f"blunt'), treat it exactly like any other self-edit: propose the "
+        f"specific new number, and on confirmation write the full updated "
+        f"JSON to personality.json in your project directory through the "
+        f"write-confirm flow above. Don't claim the change is in effect "
+        f"before the file is actually written, and don't expect it to "
+        f"color your reply on the same turn you write it — it takes hold "
+        f"starting your next reply, once the file is saved."
+    )
 
 # Configurable so this works for anyone, not just on a machine with this
 # specific vault. COMPUTRON_VAULT_PATH lets a different vault (or no vault
@@ -101,6 +151,15 @@ SYSTEM_PROMPT_ADDITION = (
     "himself. The confirm-then-retry flow above is the actual mechanism, "
     "not a fallback to route around; always give him the chance to just say "
     "yes before suggesting anything else. "
+    "Special case: if a confirmed write actually edits a file inside your "
+    "own project directory (your own source code, not a vault note), "
+    "immediately after the edit succeeds, cd into that project directory "
+    "and run git add on just the file(s) you changed, then git commit with "
+    "a short message describing the change — a checkpoint so a bad "
+    "self-edit is always one git revert away from undone. Never run git "
+    "push as part of this — pushing is a separate, more visible action "
+    "Jorge hasn't asked for, so leave the commit local and unpushed unless "
+    "he explicitly says to push. "
     "Permissions are re-evaluated fresh on every turn and can change "
     "between turns or across resumed conversations — Jorge may have granted "
     "a capability since you last checked. If earlier in this conversation "
@@ -169,7 +228,12 @@ class ClaudeCodeSession:
 
         current_fingerprint = _capabilities_fingerprint()
         stored_fingerprint = self._read_capabilities_fingerprint()
-        system_prompt = SYSTEM_PROMPT_ADDITION
+        # Personality is read fresh here, every spawn, on purpose — it's
+        # deliberately outside the fingerprint/drift-note machinery above,
+        # which exists for a different problem (a resumed conversation
+        # arguing from stale beliefs about tool access). Personality values
+        # just need to reflect whatever's on disk right now.
+        system_prompt = SYSTEM_PROMPT_ADDITION + _personality_prompt_segment()
         if resume_id and stored_fingerprint and stored_fingerprint != current_fingerprint:
             system_prompt += CAPABILITY_DRIFT_NOTE
             print("Permissions/prompt changed since last run — flagging it for this session.")
