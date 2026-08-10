@@ -44,6 +44,11 @@ AFFIRMATIVE_PHRASES = {
     "correct", "affirmative", "sounds good", "do that",
 }
 
+# Must match the closing line mandated in SYSTEM_PROMPT_ADDITION exactly —
+# used both to instruct the model and, in ask(), to detect whether a
+# confirmation window is actually open (see _pending_write_request below).
+CONFIRMATION_PROMPT = "Should I go ahead — just say yes."
+
 SYSTEM_PROMPT_ADDITION = (
     "You are being used as Computron, a spoken voice assistant for Jorge "
     "(Computron — a lighthearted Office 'The Banker' callback — is your "
@@ -62,13 +67,16 @@ SYSTEM_PROMPT_ADDITION = (
     "implying something was written or persisted unless a tool call for it "
     "actually ran. If you don't have write permission yet, the tool call "
     "will be denied automatically — when that happens, briefly describe "
-    "exactly what you'd change, then end your reply with exactly this and "
-    "nothing after it: 'Should I go ahead — just say yes.' That precise "
-    "closing line is required, every single time, because Jorge can only "
-    "give you an unambiguous confirmation if you've actually asked for one "
-    "in a recognizable way — don't bury it inside a longer sentence, don't "
-    "pair it with a second unrelated question in the same breath, and don't "
-    "paraphrase it differently each time. A vague conversational "
+    f"exactly what you'd change, then end your reply with exactly this and "
+    f"nothing after it: '{CONFIRMATION_PROMPT}' That precise closing line — "
+    "word for word, every single time — is what actually opens the "
+    "confirmation window on the backend; a paraphrase does not. This "
+    "applies just as much when you're re-asking after an interruption (a "
+    "dropped mic, an unrelated reply, anything that isn't a clear yes) as "
+    "it does the first time — always close with the exact line again, not "
+    "a rephrased version, or the window silently never opens. Don't bury "
+    "it inside a longer sentence, don't pair it with a second unrelated "
+    "question in the same breath. A vague conversational "
     "acknowledgment with no tool call is a lie by omission — never do that, "
     "even to be agreeable or keep the conversation moving. And don't "
     "respond to a denial by pivoting to a workaround instead of asking — "
@@ -272,7 +280,17 @@ class ClaudeCodeSession:
         # anything, so a stray follow-up "yes" later can't reuse it.
         if grant_write:
             self._switch_tools(SAFE_TOOLS)
-        self._pending_write_request = saw_denied
+        # The confirmation window should stay open across a turn that didn't
+        # itself trigger a fresh permission_denied — e.g. a dropped-mic turn
+        # where Computron re-asks without retrying the tool call. Keying this
+        # off the mandated closing line (CONFIRMATION_PROMPT), not just
+        # saw_denied, means any turn that ends with that exact question
+        # (first ask or a re-ask) correctly arms the next "yes" — confirmed
+        # this was a real bug: a mic-drop turn silently reset saw_denied to
+        # False, closing the window before Jorge's actual "yes" landed.
+        self._pending_write_request = saw_denied or (
+            reply is not None and reply.rstrip().endswith(CONFIRMATION_PROMPT)
+        )
 
         return reply if reply is not None else "Something went wrong.", cost
 
