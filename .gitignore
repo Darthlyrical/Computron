@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.session_id
+.capabilities_fingerprint
+.DS_Store
+
+# Piper voice model — large binary, downloaded per README setup step
+voices/*.onnx
+voices/*.onnx.json
