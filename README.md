@@ -55,12 +55,15 @@ curl -L -o voices/en_US-lessac-medium.onnx.json \
 `PIPER_BIN` in `.env` should just be `piper` — it resolves to the venv's
 `piper` console script as long as the venv is activated.
 
-### 4. Log into Claude Code (if you haven't already)
+### 4. (Optional) Point it at a vault
+By default Computron looks for an Obsidian vault at `~/Obsidian/The Triforce` — that's specific to the original build, not required. Set `COMPUTRON_VAULT_PATH` in `.env` to point at your own vault (or any folder), or just leave it unset/pointed at nothing: Computron detects a missing vault automatically and runs from its own project directory instead, no crash, no vault required to use it.
+
+### 5. Log into Claude Code (if you haven't already)
 Computron authenticates through whatever `claude` is logged into on this machine —
 run `claude` once interactively and log in if you haven't. No API key needed;
 `.env`'s `ANTHROPIC_API_KEY` is unused by this backend (see `.env.example`).
 
-### 5. Run it
+### 6. Run it
 ```bash
 python main.py
 ```

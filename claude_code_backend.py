@@ -20,10 +20,26 @@ import os
 import subprocess
 from typing import Optional
 
-VAULT_PATH = os.path.expanduser("~/Obsidian/The Triforce")
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_FILE = os.path.join(PROJECT_DIR, ".session_id")
 CAPABILITIES_FILE = os.path.join(PROJECT_DIR, ".capabilities_fingerprint")
+
+# Configurable so this works for anyone, not just on a machine with this
+# specific vault. COMPUTRON_VAULT_PATH lets a different vault (or no vault
+# at all) be used; if it's unset or the path doesn't exist, fall back to
+# running from the project directory instead of crashing on a missing cwd.
+_configured_vault_path = os.path.expanduser(
+    os.getenv("COMPUTRON_VAULT_PATH", "~/Obsidian/The Triforce")
+)
+if os.path.isdir(_configured_vault_path):
+    VAULT_PATH = _configured_vault_path
+else:
+    VAULT_PATH = PROJECT_DIR
+    print(
+        f"No vault found at {_configured_vault_path} — running from the "
+        f"project directory instead. Set COMPUTRON_VAULT_PATH in .env to "
+        f"point at your own vault, if you have one."
+    )
 
 SAFE_TOOLS = "Read,Glob,Grep,WebSearch"
 # Bash is scoped to git add/commit/push only — not bare Bash — so a
