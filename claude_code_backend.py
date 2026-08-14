@@ -20,10 +20,18 @@ import os
 import subprocess
 from typing import Optional
 
+import config
+
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_FILE = os.path.join(PROJECT_DIR, ".session_id")
 CAPABILITIES_FILE = os.path.join(PROJECT_DIR, ".capabilities_fingerprint")
 PERSONALITY_FILE = os.path.join(PROJECT_DIR, "personality.json")
+
+# ElevenLabs' documented valid range for voice_settings.speed — values
+# outside this get rejected by their API, so any value Jorge or Computron
+# writes to personality.json gets clamped to it before ever reaching a
+# request.
+_ELEVENLABS_SPEED_RANGE = (0.7, 1.2)
 
 # Not a secret, so — unlike .env — Computron can actually edit this itself
 # through the normal write-confirm flow: no built-in sensitive-file
@@ -31,8 +39,11 @@ PERSONALITY_FILE = os.path.join(PROJECT_DIR, "personality.json")
 # fingerprinted alongside SAFE_TOOLS/WRITE_TOOLS below) so a value Jorge
 # just changed takes effect on the very next respawn — which happens
 # automatically right after any confirmed write turn — without needing the
-# tool-permission drift machinery, which is a separate concern.
-DEFAULT_PERSONALITY = {"humor": 50, "sarcasm": 25, "bluntness": 70}
+# tool-permission drift machinery, which is a separate concern. "speed"
+# seeds from config.ELEVENLABS_SPEED (the .env default) the first time
+# personality.json is created, so Jorge's existing .env value is honored
+# as the starting point rather than silently reset to 1.0.
+DEFAULT_PERSONALITY = {"humor": 50, "sarcasm": 25, "bluntness": 70, "speed": config.ELEVENLABS_SPEED}
 
 
 def _read_personality() -> dict:
@@ -63,16 +74,37 @@ def _personality_prompt_segment() -> str:
         f"/100 — how much you cushion an honest but unwelcome take before "
         f"giving it; higher means the unfiltered version straight away, "
         f"lower means softening it first. Actually let these numbers shape "
-        f"how you talk, don't just acknowledge them. If Jorge asks you to "
-        f"change one (e.g. 'turn your sarcasm up to 80' or 'be less "
-        f"blunt'), treat it exactly like any other self-edit: propose the "
-        f"specific new number, and on confirmation write the full updated "
-        f"JSON to personality.json in your project directory through the "
-        f"write-confirm flow above. Don't claim the change is in effect "
-        f"before the file is actually written, and don't expect it to "
-        f"color your reply on the same turn you write it — it takes hold "
-        f"starting your next reply, once the file is saved."
+        f"how you talk, don't just acknowledge them. "
+        f"There's a fourth setting, Speed: {p['speed']} — this one is "
+        f"different from the other three: it's not a 0-100 scale, it's "
+        f"the literal ElevenLabs TTS playback-speed multiplier (1.0 = "
+        f"normal), valid roughly {_ELEVENLABS_SPEED_RANGE[0]}-"
+        f"{_ELEVENLABS_SPEED_RANGE[1]} — values outside that get clamped "
+        f"before use. This one genuinely is something you can adjust "
+        f"yourself: if Jorge asks you to talk faster/slower, don't say "
+        f"it's not something you can control — it is, through this exact "
+        f"mechanism. If Jorge asks you to change any of these four (e.g. "
+        f"'turn your sarcasm up to 80,' 'be less blunt,' or 'speak a "
+        f"little faster'), treat it exactly like any other self-edit: "
+        f"propose the specific new number, and on confirmation write the "
+        f"full updated JSON to personality.json in your project directory "
+        f"through the write-confirm flow above. Don't claim the change is "
+        f"in effect before the file is actually written, and don't expect "
+        f"it to color your reply (or, for speed, your voice) on the same "
+        f"turn you write it — it takes hold starting your next reply, "
+        f"once the file is saved and the process respawns."
     )
+
+
+def get_voice_speed() -> float:
+    """Public accessor for main.py's TTS code — the current speed value
+    from personality.json, clamped to ElevenLabs' valid range regardless
+    of what's on disk (a stray out-of-range value, written by hand or by
+    Computron, should degrade to the nearest valid speed, not break TTS
+    outright)."""
+    speed = _read_personality()["speed"]
+    lo, hi = _ELEVENLABS_SPEED_RANGE
+    return max(lo, min(hi, speed))
 
 # Configurable so this works for anyone, not just on a machine with this
 # specific vault. COMPUTRON_VAULT_PATH lets a different vault (or no vault

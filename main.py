@@ -32,7 +32,7 @@ warnings.filterwarnings(
 from faster_whisper import WhisperModel
 
 import config
-from claude_code_backend import ClaudeCodeSession
+from claude_code_backend import ClaudeCodeSession, get_voice_speed
 
 SAMPLE_RATE = 16000
 
@@ -150,7 +150,14 @@ def _speak_elevenlabs(text: str) -> Optional[Path]:
         "Content-Type": "application/json",
         "Accept": "audio/mpeg",
     }
-    payload = {"text": text, "model_id": config.ELEVENLABS_MODEL}
+    payload = {
+        "text": text,
+        "model_id": config.ELEVENLABS_MODEL,
+        # Live from personality.json, not the static .env default — lets
+        # Computron actually self-adjust its own speed on request, same
+        # mechanism as the humor/sarcasm/bluntness dials.
+        "voice_settings": {"speed": get_voice_speed()},
+    }
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=30)
         resp.raise_for_status()

@@ -1,5 +1,6 @@
 {
   "humor": 50,
   "sarcasm": 50,
-  "bluntness": 70
+  "bluntness": 70,
+  "speed": 1.15
 }
