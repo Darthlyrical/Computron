@@ -19,11 +19,16 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import config
 from main import speak
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
-_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+CODE_BLOCK_PLACEHOLDER = "View code block provided."
+
+# Captures the code body only — the (optional) language tag right after
+# the opening fence and the newline before it are consumed but not kept.
+_CODE_FENCE_RE = re.compile(r"```\w*\n?(.*?)```", re.DOTALL)
 _HEADER_RE = re.compile(r"^#{1,6}\s*", re.MULTILINE)
 _BOLD_RE = re.compile(r"(\*\*|__)(.*?)\1")
 _ITALIC_RE = re.compile(r"(\*|_)(.*?)\1")
@@ -31,13 +36,27 @@ _INLINE_CODE_RE = re.compile(r"`([^`]*)`")
 _BLANK_RUN_RE = re.compile(r"\n{3,}")
 
 
+def _replace_code_fence(match: "re.Match[str]") -> str:
+    """Short snippets (<= AUTO_READ_CODE_LINE_LIMIT lines) are worth
+    hearing — read as-is. Longer ones are replaced with a short spoken
+    placeholder instead of either reading a whole function aloud or
+    silently vanishing."""
+    code = match.group(1).strip("\n")
+    lines = code.splitlines()
+    if len(lines) <= config.AUTO_READ_CODE_LINE_LIMIT:
+        return code
+    return CODE_BLOCK_PLACEHOLDER
+
+
 def _strip_markdown_for_speech(text: str) -> str:
-    """Strips fenced code blocks entirely (Jorge's call — read the prose,
-    skip the code) and common markdown syntax, so auto-read narration
-    doesn't come out as literal asterisks/backticks. Order matters: bold
-    (**/__) before italic (*/_), since italic's regex would otherwise chew
-    through a bold pair's asterisks first."""
-    text = _CODE_FENCE_RE.sub("", text)
+    """Handles fenced code blocks per _replace_code_fence (small ones read
+    as-is, large ones become a placeholder) and strips common markdown
+    syntax so auto-read narration doesn't come out as literal
+    asterisks/backticks. Inline code (`like this`) already gets its
+    content read — only the backtick markers are stripped, not the text.
+    Order matters: bold (**/__) before italic (*/_), since italic's regex
+    would otherwise chew through a bold pair's asterisks first."""
+    text = _CODE_FENCE_RE.sub(_replace_code_fence, text)
     text = _HEADER_RE.sub("", text)
     text = _BOLD_RE.sub(r"\2", text)
     text = _ITALIC_RE.sub(r"\2", text)

@@ -35,3 +35,9 @@ ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
 # companion VS Code extension can ask questions and attach a workspace
 # directory. No auth — both processes run under the same user session.
 SERVER_PORT = int(os.getenv("COMPUTRON_SERVER_PORT", "4317"))
+
+# Auto-Read mode: fenced code blocks at or under this many lines are read
+# aloud as-is; longer ones are replaced with a short spoken placeholder
+# instead (see terminal_watcher.py) — short snippets are worth hearing,
+# a whole function isn't.
+AUTO_READ_CODE_LINE_LIMIT = int(os.getenv("AUTO_READ_CODE_LINE_LIMIT", "3"))
