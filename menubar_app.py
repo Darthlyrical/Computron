@@ -27,7 +27,7 @@ from PyObjCTools import AppHelper
 
 import config
 from claude_code_backend import ClaudeCodeSession
-from main import SAMPLE_RATE, speak, transcribe
+from main import SAMPLE_RATE, replay, speak, transcribe
 
 try:
     HOTKEY = getattr(keyboard.Key, config.HOTKEY_KEY)
@@ -48,8 +48,9 @@ class ComputronApp(rumps.App):
         self._recording = False
         self._frames = []
         self._stream = None
+        self._last_reply_wav = None
         self._lock = threading.Lock()
-        self.menu = ["Talk now", None, "Quit Computron"]
+        self.menu = ["Talk now", "Replay last reply", None, "Quit Computron"]
 
     def _set_tooltip(self, text):
         # AppKit calls must happen on the main thread (macOS's Main Thread
@@ -145,7 +146,21 @@ class ComputronApp(rumps.App):
         self._set_tooltip(f"You: {transcript}\n\nComputron: {reply}")
 
         self.title = ICON_SPEAKING
-        speak(reply)
+        self._last_reply_wav = speak(reply)
+        self.title = ICON_IDLE
+
+    @rumps.clicked("Replay last reply")
+    def replay_last(self, _):
+        # Off the main/UI thread — afplay blocks for the duration of
+        # playback, and this handler fires on the main thread (same reason
+        # _stop_recording_and_process hands _process_turn off to a thread).
+        threading.Thread(target=self._do_replay, daemon=True).start()
+
+    def _do_replay(self):
+        self.title = ICON_SPEAKING
+        if not replay(self._last_reply_wav):
+            print("(Nothing to replay yet.)")
+            self._set_tooltip("Nothing to replay yet.")
         self.title = ICON_IDLE
 
     @rumps.clicked("Quit Computron")

@@ -16,8 +16,10 @@ import tempfile
 import warnings
 import wave
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
+import requests
 import sounddevice as sd
 
 # faster-whisper's mel-filter step can hit divide-by-zero/overflow on
@@ -72,8 +74,8 @@ def transcribe(wav_path: Path) -> str:
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
-def speak(text: str):
-    """Synthesizes text with Piper and plays it with afplay (macOS)."""
+def _speak_piper(text: str) -> Optional[Path]:
+    """Synthesizes text with Piper (local, free) and plays it with afplay."""
     out_wav = Path(tempfile.gettempdir()) / "ev_output.wav"
     piper_cmd = [
         config.PIPER_BIN,
@@ -84,23 +86,87 @@ def speak(text: str):
     try:
         subprocess.run(piper_cmd, input=text.encode("utf-8"), check=True)
         subprocess.run(["afplay", str(out_wav)], check=True)
+        return out_wav
     except FileNotFoundError:
         print("[Piper or afplay not found — printing reply instead]")
         print(f"{COLOR_COMPUTRON}Computron: {text}{COLOR_RESET}")
+        return None
     except subprocess.CalledProcessError as e:
         print(f"[Voice playback failed: {e} — printing reply instead]")
         print(f"{COLOR_COMPUTRON}Computron: {text}{COLOR_RESET}")
+        return None
+
+
+def _speak_elevenlabs(text: str) -> Optional[Path]:
+    """Synthesizes text via the ElevenLabs API and plays the result.
+
+    Falls back to Piper on any failure (network error, bad key, exhausted
+    quota) — a paid-API hiccup shouldn't mean Computron goes silent, only
+    less natural-sounding for that one reply.
+    """
+    out_mp3 = Path(tempfile.gettempdir()) / "ev_output.mp3"
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
+    headers = {
+        "xi-api-key": config.ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }
+    payload = {"text": text, "model_id": config.ELEVENLABS_MODEL}
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+        out_mp3.write_bytes(resp.content)
+        subprocess.run(["afplay", str(out_mp3)], check=True)
+        return out_mp3
+    except (requests.RequestException, OSError) as e:
+        print(f"[ElevenLabs failed ({e}) — falling back to Piper]")
+        return _speak_piper(text)
+
+
+def speak(text: str) -> Optional[Path]:
+    """Synthesizes text and plays it aloud. Provider is chosen by
+    config.TTS_PROVIDER ("elevenlabs" or "piper", default "piper") —
+    ElevenLabs is only used if an API key is actually configured, otherwise
+    this silently stays on Piper regardless of TTS_PROVIDER.
+
+    Returns the path to the audio file actually played (wav or mp3, a
+    fixed name overwritten each call) so a caller can replay it later via
+    replay() without re-synthesizing — or None if synthesis/playback failed
+    outright, meaning there's nothing valid to replay.
+    """
+    if config.TTS_PROVIDER == "elevenlabs" and config.ELEVENLABS_API_KEY:
+        return _speak_elevenlabs(text)
+    return _speak_piper(text)
+
+
+def replay(wav_path: Optional[Path]) -> bool:
+    """Re-plays an already-synthesized reply's wav file with afplay,
+    skipping Piper entirely. Returns False if there's nothing to replay
+    (no reply spoken yet this run, or the temp file is gone)."""
+    if wav_path is None or not wav_path.exists():
+        return False
+    try:
+        subprocess.run(["afplay", str(wav_path)], check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
 
 
 def main():
     print("Starting Claude Code session...")
     session = ClaudeCodeSession(model=config.CLAUDE_MODEL)
-    print("Computron is ready. Press Enter to start talking, Ctrl+C to quit.\n")
+    print("Computron is ready. Press Enter to talk, or type 'r' + Enter to replay the last reply. Ctrl+C to quit.\n")
 
+    last_reply_wav = None
     try:
         while True:
             try:
-                input("Press Enter to talk...")
+                command = input("Press Enter to talk (or 'r' to replay)... ").strip().lower()
+                if command == "r":
+                    if not replay(last_reply_wav):
+                        print("(Nothing to replay yet.)")
+                    continue
+
                 wav_path = record_audio()
                 transcript = transcribe(wav_path)
                 if not transcript:
@@ -110,7 +176,7 @@ def main():
 
                 reply, turn_cost = session.ask(transcript)
                 print(f"{COLOR_COMPUTRON}Computron: {reply}{COLOR_RESET}{COLOR_DIM}  [+${turn_cost:.4f}]{COLOR_RESET}")
-                speak(reply)
+                last_reply_wav = speak(reply)
             except KeyboardInterrupt:
                 print("\nGoodbye.")
                 break

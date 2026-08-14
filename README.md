@@ -166,6 +166,21 @@ do it for you.
 ## Known rough edges (v1)
 
 - Push-to-talk only (press Enter) — no wake word or always-listening yet
-- Piper's voice is clear but not super natural — swap in ElevenLabs later if you want more polish (costs a bit)
 - `faster-whisper` uses the `small.en` model by default — good accuracy/speed balance on Apple Silicon CPU; bump to `medium.en` in `main.py` if you want better accuracy and don't mind slower transcription
 - No running cost total for the session — only per-turn cost is shown
+
+## Optional: ElevenLabs voice instead of Piper
+
+Piper is free/local and stays the default. To swap in a more natural
+ElevenLabs voice (paid API), set these in `.env` (see `.env.example`):
+
+```
+TTS_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=your-key-from-elevenlabs.io/app/settings/api-keys
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # "Rachel" by default — swap for any voice ID from your ElevenLabs library
+```
+
+If the API key is missing or a request fails (network error, exhausted
+quota), `main.speak()` silently falls back to Piper for that reply instead
+of going silent — you'll see a note printed in the terminal when that
+happens.

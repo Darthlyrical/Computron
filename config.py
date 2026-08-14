@@ -17,3 +17,16 @@ PIPER_LENGTH_SCALE = float(os.getenv("PIPER_LENGTH_SCALE", "1.0"))
 # alt_r, alt_l, cmd_r, ctrl_r. Right Option by default: rarely bound to
 # anything else system-wide, easy to reach, unlikely to fight other apps.
 HOTKEY_KEY = os.getenv("COMPUTRON_HOTKEY_KEY", "alt_r")
+
+# TTS provider: "piper" (local, free — the default) or "elevenlabs" (paid
+# API, more natural voice). Opt-in only — set TTS_PROVIDER=elevenlabs in
+# .env to switch. If ELEVENLABS_API_KEY is missing, main.speak() falls back
+# to Piper regardless of this setting.
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "piper")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+# "Rachel" — one of ElevenLabs' widely-used premade voices; swap via .env.
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+# Turbo model: optimized for low latency, which matters more than peak
+# quality for a real-time voice assistant — eleven_multilingual_v2 is
+# higher-fidelity but noticeably slower to generate.
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
