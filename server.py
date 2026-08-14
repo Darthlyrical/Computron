@@ -17,7 +17,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from main import speak
+from main import read_clipboard_aloud, speak
 
 # Mirrors ICON_IDLE/ICON_RECORDING/ICON_THINKING/ICON_SPEAKING in
 # menubar_app.py — derived from self.app.title (the single source of
@@ -95,6 +95,17 @@ class ComputronRequestHandler(BaseHTTPRequestHandler):
                 finally:
                     self.app.set_state("idle")
             self._send_json(200, {"reply": reply, "cost": cost})
+
+        elif self.path == "/read-clipboard":
+            if self.app.session is None:
+                self._send_json(503, {"error": "Computron session not ready yet"})
+                return
+            self.app.set_state("speaking")
+            try:
+                wav = read_clipboard_aloud()
+            finally:
+                self.app.set_state("idle")
+            self._send_json(200, {"read": wav is not None})
 
         elif self.path == "/editor-state":
             path = (body.get("path") or "").strip()

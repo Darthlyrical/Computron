@@ -13,6 +13,7 @@ Run: python main.py
 import subprocess
 import sys
 import tempfile
+import threading
 import warnings
 import wave
 from pathlib import Path
@@ -48,16 +49,22 @@ whisper_model = WhisperModel("small.en", device="cpu", compute_type="int8")
 # can interrupt it — e.g. pressing the push-to-talk hotkey again while
 # Computron is still talking (barge-in), from menubar_app.py.
 _current_playback: Optional[subprocess.Popen] = None
+# Serializes actual playback — without this, two speak() calls fired from
+# different threads at once (a voice reply and, e.g., auto-read narration)
+# would start two overlapping afplay processes and garble the audio.
+# Concurrent callers block here and play sequentially instead.
+_playback_lock = threading.Lock()
 
 
 def _play(path: Path) -> None:
     """Plays an audio file via afplay, tracked so it can be interrupted."""
     global _current_playback
-    proc = subprocess.Popen(["afplay", str(path)])
-    _current_playback = proc
-    returncode = proc.wait()
-    if _current_playback is proc:
-        _current_playback = None
+    with _playback_lock:
+        proc = subprocess.Popen(["afplay", str(path)])
+        _current_playback = proc
+        returncode = proc.wait()
+        if _current_playback is proc:
+            _current_playback = None
     # A positive returncode is a real afplay failure; a negative one means
     # it was killed by a signal (stop_speaking(), or an external kill) —
     # an intentional interruption, not an error, so don't raise for that.
@@ -182,6 +189,22 @@ def replay(wav_path: Optional[Path]) -> bool:
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+
+def read_clipboard_aloud() -> Optional[Path]:
+    """Reads the current macOS clipboard contents aloud via the same TTS
+    pipeline as spoken replies — a mechanical action, bypasses Claude
+    entirely (no reasoning needed to read text back verbatim). Returns the
+    audio path (so it can be replayed via 'r'/"Replay last reply") or None
+    if the clipboard was empty or unreadable."""
+    try:
+        result = subprocess.run(["pbpaste"], capture_output=True, text=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+    text = result.stdout.strip()
+    if not text:
+        return None
+    return speak(text)
 
 
 def main():

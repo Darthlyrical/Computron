@@ -20,6 +20,10 @@
       {
         "command": "computron.askAboutSelection",
         "title": "Computron: Ask About Selection"
+      },
+      {
+        "command": "computron.readClipboard",
+        "title": "Computron: Read Clipboard"
       }
     ],
     "configuration": {

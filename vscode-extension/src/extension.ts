@@ -223,6 +223,22 @@ export function activate(context: vscode.ExtensionContext) {
       await ask(question, composed);
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("computron.readClipboard", async () => {
+      // Reads the OS clipboard (whatever was last Cmd+C'd, including from
+      // the Claude Code panel) — not VS Code's own clipboard API, since
+      // this actually runs server-side via pbpaste on the Mac.
+      try {
+        const { read } = await postJson<{ read: boolean }>("/read-clipboard", {});
+        if (!read) {
+          vscode.window.showInformationMessage("Computron: clipboard is empty.");
+        }
+      } catch (err) {
+        vscode.window.showErrorMessage(`Computron: ${(err as Error).message}`);
+      }
+    })
+  );
 }
 
 export function deactivate() {}

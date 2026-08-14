@@ -28,8 +28,9 @@ from PyObjCTools import AppHelper
 
 import config
 from claude_code_backend import ClaudeCodeSession
-from main import SAMPLE_RATE, replay, speak, stop_speaking, transcribe
+from main import SAMPLE_RATE, read_clipboard_aloud, replay, speak, stop_speaking, transcribe
 from server import start_server
+from terminal_watcher import start_watching
 
 try:
     HOTKEY = getattr(keyboard.Key, config.HOTKEY_KEY)
@@ -62,7 +63,16 @@ class ComputronApp(rumps.App):
         # (active file path + cursor line) so voice turns can be
         # editor-aware too, not just typed Ask commands.
         self.editor_state = None
-        self.menu = ["Talk now", "Replay last reply", None, "Quit Computron"]
+        # Auto-Read mode: tails the attached workspace's `claude` terminal
+        # session (terminal_watcher.py) and speaks new responses aloud. The
+        # watcher thread always runs (started in start_session below) but
+        # only speaks while this is True — off by default, opt-in, since
+        # it's a standing background behavior with real ongoing TTS cost.
+        self.auto_read_enabled = False
+        self.menu = [
+            "Talk now", "Replay last reply", "Read Clipboard",
+            "Auto-Read: Off", None, "Quit Computron",
+        ]
 
     # Used by server.py so an HTTP-driven ask (from the VS Code extension)
     # flips the icon to "thinking" too, not just voice turns — the same
@@ -104,6 +114,7 @@ class ComputronApp(rumps.App):
         print("Starting Claude Code session...")
         self.session = ClaudeCodeSession(model=config.CLAUDE_MODEL)
         self.http_server = start_server(self, config.SERVER_PORT)
+        start_watching(self)
         self.title = ICON_IDLE
         print(f"Computron menu bar app ready. Hold {config.HOTKEY_KEY} to talk, or use the menu.")
 
@@ -209,6 +220,29 @@ class ComputronApp(rumps.App):
             print("(Nothing to replay yet.)")
             self._set_tooltip("Nothing to replay yet.")
         self.title = ICON_IDLE
+
+    @rumps.clicked("Read Clipboard")
+    def read_clipboard(self, _):
+        threading.Thread(target=self._do_read_clipboard, daemon=True).start()
+
+    def _do_read_clipboard(self):
+        self.title = ICON_SPEAKING
+        wav = read_clipboard_aloud()
+        if wav is None:
+            print("(Clipboard empty or unreadable.)")
+            self._set_tooltip("Clipboard empty or unreadable.")
+        else:
+            self._last_reply_wav = wav
+        self.title = ICON_IDLE
+
+    @rumps.clicked("Auto-Read: Off")
+    def toggle_auto_read(self, sender):
+        self.auto_read_enabled = not self.auto_read_enabled
+        sender.title = "Auto-Read: On" if self.auto_read_enabled else "Auto-Read: Off"
+        # Interrupt any narration/reply immediately on turning it off —
+        # otherwise it'd keep speaking whatever's already queued/playing.
+        if not self.auto_read_enabled:
+            stop_speaking()
 
     @rumps.clicked("Quit Computron")
     def quit_app(self, _):
