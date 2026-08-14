@@ -44,6 +44,38 @@ COLOR_RESET = "\033[0m"
 print("Loading local speech-to-text model (first run downloads it, ~1 min)...")
 whisper_model = WhisperModel("small.en", device="cpu", compute_type="int8")
 
+# Tracks the currently-playing afplay process (if any) so stop_speaking()
+# can interrupt it — e.g. pressing the push-to-talk hotkey again while
+# Computron is still talking (barge-in), from menubar_app.py.
+_current_playback: Optional[subprocess.Popen] = None
+
+
+def _play(path: Path) -> None:
+    """Plays an audio file via afplay, tracked so it can be interrupted."""
+    global _current_playback
+    proc = subprocess.Popen(["afplay", str(path)])
+    _current_playback = proc
+    returncode = proc.wait()
+    if _current_playback is proc:
+        _current_playback = None
+    # A positive returncode is a real afplay failure; a negative one means
+    # it was killed by a signal (stop_speaking(), or an external kill) —
+    # an intentional interruption, not an error, so don't raise for that.
+    if returncode and returncode > 0:
+        raise subprocess.CalledProcessError(returncode, ["afplay", str(path)])
+
+
+def stop_speaking() -> bool:
+    """Interrupts current playback, if any. Returns whether anything was
+    actually playing (so a caller can decide whether it's worth logging)."""
+    global _current_playback
+    proc = _current_playback
+    if proc is None or proc.poll() is not None:
+        return False
+    proc.terminate()
+    _current_playback = None
+    return True
+
 
 def record_audio() -> Path:
     """Records from the mic until the user presses Enter again."""
@@ -85,7 +117,7 @@ def _speak_piper(text: str) -> Optional[Path]:
     ]
     try:
         subprocess.run(piper_cmd, input=text.encode("utf-8"), check=True)
-        subprocess.run(["afplay", str(out_wav)], check=True)
+        _play(out_wav)
         return out_wav
     except FileNotFoundError:
         print("[Piper or afplay not found — printing reply instead]")
@@ -116,7 +148,7 @@ def _speak_elevenlabs(text: str) -> Optional[Path]:
         resp = requests.post(url, json=payload, headers=headers, timeout=30)
         resp.raise_for_status()
         out_mp3.write_bytes(resp.content)
-        subprocess.run(["afplay", str(out_mp3)], check=True)
+        _play(out_mp3)
         return out_mp3
     except (requests.RequestException, OSError) as e:
         print(f"[ElevenLabs failed ({e}) — falling back to Piper]")
@@ -146,7 +178,7 @@ def replay(wav_path: Optional[Path]) -> bool:
     if wav_path is None or not wav_path.exists():
         return False
     try:
-        subprocess.run(["afplay", str(wav_path)], check=True)
+        _play(wav_path)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False

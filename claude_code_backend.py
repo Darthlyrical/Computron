@@ -221,6 +221,12 @@ class ClaudeCodeSession:
         self._first_call_done = False
         self._pending_write_request = False
         self._current_tools = SAFE_TOOLS
+        # Set via set_workspace() by the VS Code extension (through the HTTP
+        # bridge in server.py) — an extra --add-dir so Computron can read
+        # (and, once confirmed, write) whatever project is open there,
+        # alongside its own project directory. None means no workspace
+        # attached yet.
+        self.workspace_dir: Optional[str] = None
         self.proc = self._spawn(SAFE_TOOLS)
 
     def _spawn(self, allowed_tools: str) -> subprocess.Popen:
@@ -234,11 +240,30 @@ class ClaudeCodeSession:
         # arguing from stale beliefs about tool access). Personality values
         # just need to reflect whatever's on disk right now.
         system_prompt = SYSTEM_PROMPT_ADDITION + _personality_prompt_segment()
+        if self.workspace_dir:
+            system_prompt += (
+                f"\n\nA VS Code workspace directory is currently attached: "
+                f"{self.workspace_dir}. You have the same read access there "
+                f"as your own project directory. The same self-edit "
+                f"git-checkpoint habit applies to it too: if a confirmed "
+                f"write edits a file inside {self.workspace_dir}, "
+                f"immediately after the edit succeeds, cd into that "
+                f"directory and run git add on just the file(s) you "
+                f"changed, then git commit with a short message describing "
+                f"the change — same as for your own project directory. "
+                f"Never run git push there either, unless Jorge explicitly "
+                f"says to. If anything earlier in this conversation claimed "
+                f"a different attached workspace (or none at all), that "
+                f"claim is now stale — this line is the current, correct "
+                f"one. Don't reason from what you said before about which "
+                f"workspace is attached; this line always wins."
+            )
         if resume_id and stored_fingerprint and stored_fingerprint != current_fingerprint:
             system_prompt += CAPABILITY_DRIFT_NOTE
             print("Permissions/prompt changed since last run — flagging it for this session.")
         self._write_capabilities_fingerprint(current_fingerprint)
 
+        add_dirs = [PROJECT_DIR] + ([self.workspace_dir] if self.workspace_dir else [])
         cmd = [
             "claude", "-p",
             "--input-format", "stream-json",
@@ -247,7 +272,7 @@ class ClaudeCodeSession:
             "--model", self.model,
             "--allowedTools", allowed_tools,
             "--permission-mode", "dontAsk",
-            "--add-dir", PROJECT_DIR,
+            "--add-dir", *add_dirs,
             "--append-system-prompt", system_prompt,
         ]
         self._resumed = bool(resume_id)
@@ -326,6 +351,18 @@ class ClaudeCodeSession:
         # confirmed empirically (a resumed process starts back at 0 even
         # though the resumed conversation has prior cost). Reset the
         # baseline on every respawn or turn_cost deltas go negative.
+        self._last_total_cost = 0.0
+
+    def set_workspace(self, path: str):
+        """Attaches (or switches) the VS Code workspace directory Computron
+        can read/write. Respawns the subprocess with an extra --add-dir,
+        same pattern as _switch_tools — a no-op if it's already attached."""
+        normalized = os.path.abspath(os.path.expanduser(path))
+        if normalized == self.workspace_dir:
+            return
+        self.workspace_dir = normalized
+        self.close()
+        self.proc = self._spawn(self._current_tools)
         self._last_total_cost = 0.0
 
     def ask(self, text: str) -> tuple[str, float]:

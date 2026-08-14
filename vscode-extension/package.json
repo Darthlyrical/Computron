@@ -1,0 +1,50 @@
+{
+  "name": "computron-vscode",
+  "displayName": "Computron",
+  "description": "Ask Computron (your voice assistant) questions about the open workspace, right from VS Code.",
+  "version": "0.1.0",
+  "publisher": "darthlyrical",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "computron.ask",
+        "title": "Computron: Ask"
+      },
+      {
+        "command": "computron.askAboutSelection",
+        "title": "Computron: Ask About Selection"
+      }
+    ],
+    "configuration": {
+      "title": "Computron",
+      "properties": {
+        "computron.serverPort": {
+          "type": "number",
+          "default": 4317,
+          "description": "Port of Computron's local HTTP bridge (must match COMPUTRON_SERVER_PORT in Computron's .env)."
+        },
+        "computron.speakReplies": {
+          "type": "boolean",
+          "default": true,
+          "description": "Speak replies to typed 'Computron: Ask' questions aloud (via Piper/afplay on the Mac running Computron), not just show them as text."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

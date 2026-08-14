@@ -16,6 +16,7 @@ Run: python menubar_app.py
 """
 import tempfile
 import threading
+import time
 import wave
 from pathlib import Path
 
@@ -27,7 +28,8 @@ from PyObjCTools import AppHelper
 
 import config
 from claude_code_backend import ClaudeCodeSession
-from main import SAMPLE_RATE, replay, speak, transcribe
+from main import SAMPLE_RATE, replay, speak, stop_speaking, transcribe
+from server import start_server
 
 try:
     HOTKEY = getattr(keyboard.Key, config.HOTKEY_KEY)
@@ -50,7 +52,40 @@ class ComputronApp(rumps.App):
         self._stream = None
         self._last_reply_wav = None
         self._lock = threading.Lock()
+        # Guards every session.ask() call (voice turns and HTTP turns from
+        # the VS Code extension) so concurrent callers can't interleave on
+        # the one persistent claude subprocess's stdin/stdout.
+        self.session_lock = threading.Lock()
+        self.last_turn = None
+        self.http_server = None
+        # Kept fresh by the VS Code extension via POST /editor-state
+        # (active file path + cursor line) so voice turns can be
+        # editor-aware too, not just typed Ask commands.
+        self.editor_state = None
         self.menu = ["Talk now", "Replay last reply", None, "Quit Computron"]
+
+    # Used by server.py so an HTTP-driven ask (from the VS Code extension)
+    # flips the icon to "thinking" too, not just voice turns — the same
+    # menu bar state server.py's /status reports back to the extension.
+    def set_state(self, state: str):
+        self.title = {
+            "idle": ICON_IDLE, "recording": ICON_RECORDING,
+            "thinking": ICON_THINKING, "speaking": ICON_SPEAKING,
+        }[state]
+
+    def _compose_with_editor_context(self, text: str) -> str:
+        """Prepends the active VS Code file/cursor line (kept fresh by the
+        extension via POST /editor-state) to a voice transcript — without
+        this, a spoken "what's this line doing" has no way to know what's
+        on screen and answers from stale conversation history instead.
+        No-op if no editor state has been reported yet (or VS Code isn't
+        running/connected)."""
+        state = self.editor_state
+        if not state or not state.get("path"):
+            return text
+        line = state.get("line")
+        line_part = f", cursor on line {line}" if line else ""
+        return f"Jorge's active file in VS Code: {state['path']}{line_part}.\nJorge asks: {text}"
 
     def _set_tooltip(self, text):
         # AppKit calls must happen on the main thread (macOS's Main Thread
@@ -68,6 +103,7 @@ class ComputronApp(rumps.App):
         self.title = ICON_THINKING
         print("Starting Claude Code session...")
         self.session = ClaudeCodeSession(model=config.CLAUDE_MODEL)
+        self.http_server = start_server(self, config.SERVER_PORT)
         self.title = ICON_IDLE
         print(f"Computron menu bar app ready. Hold {config.HOTKEY_KEY} to talk, or use the menu.")
 
@@ -93,6 +129,12 @@ class ComputronApp(rumps.App):
             if self._recording:
                 return
             self._recording = True
+        # Barge-in: pressing the hotkey (or clicking "Talk now") while
+        # Computron is still talking interrupts playback immediately,
+        # rather than recording your next question over the top of it.
+        # No-op if nothing's currently playing.
+        if stop_speaking():
+            print("(Interrupted — go ahead.)")
         self._frames = []
         self.title = ICON_RECORDING
         self._set_tooltip("Listening...")
@@ -141,7 +183,12 @@ class ComputronApp(rumps.App):
         print(f"You: {transcript}")
         self._set_tooltip(f"You: {transcript}\n\nThinking...")
 
-        reply, turn_cost = self.session.ask(transcript)
+        with self.session_lock:
+            reply, turn_cost = self.session.ask(self._compose_with_editor_context(transcript))
+        self.last_turn = {
+            "id": time.time(), "text": transcript, "reply": reply,
+            "cost": turn_cost, "source": "voice",
+        }
         print(f"Computron: {reply}  [+${turn_cost:.4f}]")
         self._set_tooltip(f"You: {transcript}\n\nComputron: {reply}")
 
@@ -165,6 +212,8 @@ class ComputronApp(rumps.App):
 
     @rumps.clicked("Quit Computron")
     def quit_app(self, _):
+        if self.http_server:
+            self.http_server.shutdown()
         if self.session:
             self.session.close()
         rumps.quit_application()

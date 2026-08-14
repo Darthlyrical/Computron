@@ -30,3 +30,8 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 # quality for a real-time voice assistant — eleven_multilingual_v2 is
 # higher-fidelity but noticeably slower to generate.
 ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+
+# Local-only HTTP bridge (127.0.0.1) the menu bar app exposes so the
+# companion VS Code extension can ask questions and attach a workspace
+# directory. No auth — both processes run under the same user session.
+SERVER_PORT = int(os.getenv("COMPUTRON_SERVER_PORT", "4317"))
