@@ -124,13 +124,19 @@ else:
     )
 
 SAFE_TOOLS = "Read,Glob,Grep,WebSearch"
-# Bash is scoped to git add/commit/push only — not bare Bash — so a
-# confirmed write turn can commit and push (e.g. vault memory sync) without
-# opening up arbitrary shell command execution off a misheard "yes".
-WRITE_TOOLS = (
-    "Read,Glob,Grep,WebSearch,Edit,Write,"
-    "Bash(git add:*),Bash(git commit:*),Bash(git push:*)"
-)
+# Bash is scoped to git only — not bare Bash — so a confirmed write turn
+# can commit and push (e.g. vault memory sync) without opening up
+# arbitrary shell command execution off a misheard "yes". Was
+# Bash(git add:*),Bash(git commit:*),Bash(git push:*) — narrower on paper,
+# but the permission matcher does a literal string-prefix check, and the
+# checkpoint commit needs `git -C <dir> ...` (no `cd`, since cwd is the
+# vault, not the target project — see the system prompt below), which
+# starts with "git -C", not "git add"/"git commit". Verified empirically:
+# the three narrow patterns denied every checkpoint attempt 100% of the
+# time regardless of confirmation; Bash(git:*) with `git -C` succeeded
+# immediately. Broader than add/commit/push (any git subcommand reachable
+# during the one granted turn), but still git-only, still single-turn.
+WRITE_TOOLS = "Read,Glob,Grep,WebSearch,Edit,Write,Bash(git:*)"
 
 # Short, unambiguous confirmations only — anything longer or more equivocal
 # ("maybe", "let me think", a new unrelated question) does NOT grant write
@@ -185,13 +191,16 @@ SYSTEM_PROMPT_ADDITION = (
     "yes before suggesting anything else. "
     "Special case: if a confirmed write actually edits a file inside your "
     "own project directory (your own source code, not a vault note), "
-    "immediately after the edit succeeds, cd into that project directory "
-    "and run git add on just the file(s) you changed, then git commit with "
-    "a short message describing the change — a checkpoint so a bad "
-    "self-edit is always one git revert away from undone. Never run git "
-    "push as part of this — pushing is a separate, more visible action "
-    "Jorge hasn't asked for, so leave the commit local and unpushed unless "
-    "he explicitly says to push. "
+    "immediately after the edit succeeds, commit it as a checkpoint so a "
+    f"bad self-edit is always one git revert away from undone — but do "
+    f"NOT cd there first (your shell's cwd is the vault, and a `cd ... && "
+    f"git ...` command gets denied; that's a real, confirmed bug, not a "
+    f"guess). Instead run two separate commands using git's -C flag: "
+    f"`git -C {PROJECT_DIR} add <the file(s) you changed>`, then "
+    f"`git -C {PROJECT_DIR} commit -m \"<short message describing the "
+    f"change>\"`. Never run git push as part of this — pushing is a "
+    "separate, more visible action Jorge hasn't asked for, so leave the "
+    "commit local and unpushed unless he explicitly says to push. "
     "Permissions are re-evaluated fresh on every turn and can change "
     "between turns or across resumed conversations — Jorge may have granted "
     "a capability since you last checked. If earlier in this conversation "
@@ -279,10 +288,13 @@ class ClaudeCodeSession:
                 f"as your own project directory. The same self-edit "
                 f"git-checkpoint habit applies to it too: if a confirmed "
                 f"write edits a file inside {self.workspace_dir}, "
-                f"immediately after the edit succeeds, cd into that "
-                f"directory and run git add on just the file(s) you "
-                f"changed, then git commit with a short message describing "
-                f"the change — same as for your own project directory. "
+                f"immediately after the edit succeeds, commit it — same as "
+                f"for your own project directory: do NOT cd there first "
+                f"(your shell's cwd is the vault; a `cd ... && git ...` "
+                f"command gets denied), instead run `git -C "
+                f"{self.workspace_dir} add <file(s)>` then `git -C "
+                f"{self.workspace_dir} commit -m \"<message>\"` as two "
+                f"separate commands. "
                 f"Never run git push there either, unless Jorge explicitly "
                 f"says to. If anything earlier in this conversation claimed "
                 f"a different attached workspace (or none at all), that "
