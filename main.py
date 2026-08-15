@@ -227,6 +227,34 @@ def replay(wav_path: Optional[Path]) -> bool:
         return False
 
 
+# Anthropic's own recommended cap for a vision image's longest edge —
+# larger images get resized server-side anyway, so downscaling here first
+# (via sips, already built into macOS, no new dependency) just saves upload
+# time over the stdin pipe rather than shipping full Retina resolution for
+# no gain in what the model can actually see.
+SCREENSHOT_MAX_DIMENSION = 1568
+
+
+def capture_screenshot() -> Optional[Path]:
+    """Captures the screen via macOS's screencapture CLI (-x: no shutter
+    sound) for a screen-aware turn. Requires the Screen Recording
+    permission granted to whatever process runs Computron — same shape as
+    the existing Accessibility grant for the hotkey, and only takes effect
+    after that process's parent (e.g. Terminal) relaunches. Returns None on
+    any failure so a caller can fall back to a screenshot-less turn instead
+    of crashing it outright."""
+    out_path = Path(tempfile.gettempdir()) / "computron_screen.png"
+    try:
+        subprocess.run(["screencapture", "-x", str(out_path)], check=True, timeout=10)
+        subprocess.run(
+            ["sips", "--resampleHeightWidthMax", str(SCREENSHOT_MAX_DIMENSION), str(out_path)],
+            check=True, timeout=10, capture_output=True,
+        )
+        return out_path
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
 def read_clipboard_aloud() -> Optional[Path]:
     """Reads the current macOS clipboard contents aloud via the same TTS
     pipeline as spoken replies — a mechanical action, bypasses Claude

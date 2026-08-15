@@ -14,6 +14,7 @@ deliberate safety choice for a voice-driven assistant with no way to render
 a normal permission prompt — see the write-confirmation flow in
 ClaudeCodeSession.ask() below.
 """
+import base64
 import hashlib
 import json
 import os
@@ -409,13 +410,17 @@ class ClaudeCodeSession:
         self.proc = self._spawn(self._current_tools)
         self._last_total_cost = 0.0
 
-    def ask(self, text: str) -> tuple[str, float]:
-        """Sends a message, blocks for the reply. Returns (reply_text, this_turn_cost_usd)."""
+    def ask(self, text: str, image_path: Optional[str] = None) -> tuple[str, float]:
+        """Sends a message, blocks for the reply. Returns (reply_text, this_turn_cost_usd).
+
+        image_path, if given, attaches that image (e.g. a screenshot for an
+        "Ask About Screen" turn) to this message only — never persisted or
+        reused on later turns."""
         grant_write = self._pending_write_request and self._looks_like_confirmation(text)
         self._switch_tools(WRITE_TOOLS if grant_write else SAFE_TOOLS)
 
         try:
-            reply, cost, is_error, saw_denied = self._ask_once(text)
+            reply, cost, is_error, saw_denied = self._ask_once(text, image_path)
         except (RuntimeError, OSError):
             # OSError covers BrokenPipeError: the subprocess can die before
             # we even finish writing to its stdin (e.g. --resume-ing a
@@ -437,7 +442,7 @@ class ClaudeCodeSession:
             self.proc = self._spawn(self._current_tools)
             self._last_total_cost = 0.0
             try:
-                reply, cost, is_error, saw_denied = self._ask_once(text)
+                reply, cost, is_error, saw_denied = self._ask_once(text, image_path)
             except (RuntimeError, OSError) as e:
                 reply, cost = f"Something went wrong: {e}", 0.0
 
@@ -461,10 +466,21 @@ class ClaudeCodeSession:
 
         return reply if reply is not None else "Something went wrong.", cost
 
-    def _ask_once(self, text: str) -> tuple[str, float, bool, bool]:
+    def _ask_once(self, text: str, image_path: Optional[str] = None) -> tuple[str, float, bool, bool]:
+        content = []
+        if image_path:
+            # screencapture (the only current source of image_path) always
+            # writes PNG, so the media type isn't derived from the path.
+            with open(image_path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("ascii")
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": encoded},
+            })
+        content.append({"type": "text", "text": text})
         message = {
             "type": "user",
-            "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+            "message": {"role": "user", "content": content},
         }
         self.proc.stdin.write(json.dumps(message) + "\n")
         self.proc.stdin.flush()

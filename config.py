@@ -17,6 +17,11 @@ PIPER_LENGTH_SCALE = float(os.getenv("PIPER_LENGTH_SCALE", "1.0"))
 # alt_r, alt_l, cmd_r, ctrl_r. Right Option by default: rarely bound to
 # anything else system-wide, easy to reach, unlikely to fight other apps.
 HOTKEY_KEY = os.getenv("COMPUTRON_HOTKEY_KEY", "alt_r")
+# Second push-to-talk hotkey, same hold-to-record/release-to-send shape,
+# but attaches a screenshot to that turn only ("Ask About Screen"). Left
+# Option by default — a distinct physical key from HOTKEY_KEY so a normal
+# voice turn never pays for a screenshot capture + larger payload.
+SCREEN_HOTKEY_KEY = os.getenv("COMPUTRON_SCREEN_HOTKEY_KEY", "alt_l")
 
 # TTS provider: "piper" (local, free — the default) or "elevenlabs" (paid
 # API, more natural voice). Opt-in only — set TTS_PROVIDER=elevenlabs in
@@ -44,3 +49,27 @@ SERVER_PORT = int(os.getenv("COMPUTRON_SERVER_PORT", "4317"))
 # instead (see terminal_watcher.py) — short snippets are worth hearing,
 # a whole function isn't.
 AUTO_READ_CODE_LINE_LIMIT = int(os.getenv("AUTO_READ_CODE_LINE_LIMIT", "3"))
+
+# Floating waveform visualizer look — these are only the *seed* defaults,
+# used the first time waveform_settings.json is created (same relationship
+# config.ELEVENLABS_SPEED has to personality.json's "speed"). After that,
+# waveform_settings.json is the live source of truth: edit it from the menu
+# bar's "Waveform Settings" submenu or via `python waveform_settings.py`,
+# both take effect on the next spoken reply with no restart needed. Defaults
+# below match the window's original hardcoded appearance.
+# One of: bars (spectrum equalizer bars), line (a filled amplitude ribbon
+# that scrolls left), orb (a Siri-style pulsing circle).
+WAVEFORM_STYLE = os.getenv("COMPUTRON_WAVEFORM_STYLE", "bars")
+WAVEFORM_COLOR = os.getenv("COMPUTRON_WAVEFORM_COLOR", "FFFFFF")  # hex RGB, '#' optional
+WAVEFORM_OPACITY = float(os.getenv("COMPUTRON_WAVEFORM_OPACITY", "0.85"))  # 0-1
+WAVEFORM_WIDTH = int(os.getenv("COMPUTRON_WAVEFORM_WIDTH", "220"))
+WAVEFORM_HEIGHT = int(os.getenv("COMPUTRON_WAVEFORM_HEIGHT", "60"))
+WAVEFORM_BARS = int(os.getenv("COMPUTRON_WAVEFORM_BARS", "9"))
+WAVEFORM_BAR_GAP = float(os.getenv("COMPUTRON_WAVEFORM_BAR_GAP", "4.0"))
+# One of: bottom-center, bottom-left, bottom-right, top-center, top-left,
+# top-right, center. Falls back to bottom-center (with a printed warning)
+# on anything else.
+WAVEFORM_POSITION = os.getenv("COMPUTRON_WAVEFORM_POSITION", "bottom-center")
+# Distance in px from whichever screen edge(s) the chosen position hugs —
+# meaningless for "center", which ignores it.
+WAVEFORM_MARGIN = int(os.getenv("COMPUTRON_WAVEFORM_MARGIN", "80"))
