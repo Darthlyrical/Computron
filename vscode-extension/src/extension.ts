@@ -15,6 +15,18 @@ const STATUS_DISPLAY: Record<string, { icon: string; text: string }> = {
 };
 const STATUS_NOT_RUNNING = { icon: "$(circle-slash)", text: "Computron: not running" };
 
+// Must match AFFIRMATIVE_PHRASES in claude_code_backend.py exactly —
+// ClaudeCodeSession._looks_like_confirmation() does an exact match on
+// whatever text it receives. Prefixing a bare "yes" with file context
+// (below) would make it no longer match, silently breaking write-access
+// confirmation — a real bug caught live in the voice path, fixed here too
+// since the same composition happens for typed Ask.
+const AFFIRMATIVE_PHRASES = new Set([
+  "yes", "yeah", "yep", "yup", "sure", "confirm", "confirmed",
+  "go ahead", "do it", "please do", "yes please", "yes go ahead",
+  "correct", "affirmative", "sounds good", "do that",
+]);
+
 interface Turn {
   id: number;
   text: string;
@@ -182,7 +194,8 @@ export function activate(context: vscode.ExtensionContext) {
       // name the file every time — Computron can Read the file itself once
       // it knows the path. Falls back to the bare question with no editor.
       const editor = vscode.window.activeTextEditor;
-      if (!editor) {
+      const normalized = text.trim().toLowerCase().replace(/[.!]+$/, "");
+      if (!editor || AFFIRMATIVE_PHRASES.has(normalized)) {
         await ask(text);
         return;
       }

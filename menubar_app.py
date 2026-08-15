@@ -27,7 +27,7 @@ from pynput import keyboard
 from PyObjCTools import AppHelper
 
 import config
-from claude_code_backend import ClaudeCodeSession
+from claude_code_backend import AFFIRMATIVE_PHRASES, ClaudeCodeSession
 from main import SAMPLE_RATE, read_clipboard_aloud, replay, speak, stop_speaking, transcribe
 from server import start_server
 from terminal_watcher import start_watching
@@ -89,9 +89,22 @@ class ComputronApp(rumps.App):
         this, a spoken "what's this line doing" has no way to know what's
         on screen and answers from stale conversation history instead.
         No-op if no editor state has been reported yet (or VS Code isn't
-        running/connected)."""
+        running/connected).
+
+        Also a no-op for bare confirmations ("yes", "go ahead", etc.) —
+        real bug, caught live: ClaudeCodeSession._looks_like_confirmation()
+        does an exact match against AFFIRMATIVE_PHRASES on whatever text
+        it receives. Wrapping a plain "yes" in the file-context prefix
+        made it no longer match, so write access silently stopped
+        granting the moment editor_state started being populated — the
+        first couple of confirmations in a session worked (before VS Code
+        had reported anything yet), then every one after quietly failed.
+        """
         state = self.editor_state
         if not state or not state.get("path"):
+            return text
+        normalized = text.strip().lower().rstrip(".!")
+        if normalized in AFFIRMATIVE_PHRASES:
             return text
         line = state.get("line")
         line_part = f", cursor on line {line}" if line else ""
