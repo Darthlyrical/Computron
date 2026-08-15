@@ -27,8 +27,12 @@ from pynput import keyboard
 from PyObjCTools import AppHelper
 
 import config
+import waveform_window
 from claude_code_backend import AFFIRMATIVE_PHRASES, ClaudeCodeSession
-from main import SAMPLE_RATE, read_clipboard_aloud, replay, speak, stop_speaking, transcribe
+from main import (
+    SAMPLE_RATE, read_clipboard_aloud, replay, set_playback_listener,
+    speak, stop_speaking, transcribe,
+)
 from server import start_server
 from terminal_watcher import start_watching
 
@@ -128,6 +132,12 @@ class ComputronApp(rumps.App):
         self.session = ClaudeCodeSession(model=config.CLAUDE_MODEL)
         self.http_server = start_server(self, config.SERVER_PORT)
         start_watching(self)
+        # Floating waveform: main.py calls this with the audio path right
+        # as _play() starts, and None right as it stops. main.py itself
+        # never touches AppKit, so the hop to the main thread happens here.
+        set_playback_listener(
+            lambda path: AppHelper.callAfter(waveform_window.on_playback_change, path)
+        )
         self.title = ICON_IDLE
         print(f"Computron menu bar app ready. Hold {config.HOTKEY_KEY} to talk, or use the menu.")
 

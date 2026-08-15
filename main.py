@@ -17,7 +17,7 @@ import threading
 import warnings
 import wave
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import requests
@@ -55,16 +55,34 @@ _current_playback: Optional[subprocess.Popen] = None
 # Concurrent callers block here and play sequentially instead.
 _playback_lock = threading.Lock()
 
+# Optional hook, set via set_playback_listener() — called with the audio
+# path right as playback actually starts, and with None right as it stops
+# (naturally or via stop_speaking()). Lets menubar_app.py drive the
+# floating waveform visualizer without main.py itself depending on AppKit
+# at all, so it stays usable standalone in a plain terminal.
+_playback_listener: Optional[Callable[[Optional[Path]], None]] = None
+
+
+def set_playback_listener(fn: Optional[Callable[[Optional[Path]], None]]) -> None:
+    global _playback_listener
+    _playback_listener = fn
+
 
 def _play(path: Path) -> None:
     """Plays an audio file via afplay, tracked so it can be interrupted."""
     global _current_playback
     with _playback_lock:
-        proc = subprocess.Popen(["afplay", str(path)])
-        _current_playback = proc
-        returncode = proc.wait()
-        if _current_playback is proc:
-            _current_playback = None
+        if _playback_listener:
+            _playback_listener(path)
+        try:
+            proc = subprocess.Popen(["afplay", str(path)])
+            _current_playback = proc
+            returncode = proc.wait()
+            if _current_playback is proc:
+                _current_playback = None
+        finally:
+            if _playback_listener:
+                _playback_listener(None)
     # A positive returncode is a real afplay failure; a negative one means
     # it was killed by a signal (stop_speaking(), or an external kill) —
     # an intentional interruption, not an error, so don't raise for that.
@@ -136,19 +154,25 @@ def _speak_piper(text: str) -> Optional[Path]:
         return None
 
 
+ELEVENLABS_PCM_RATE = 24000  # 44.1kHz PCM requires ElevenLabs' Pro tier; 24kHz doesn't and is plenty for voice
+
+
 def _speak_elevenlabs(text: str) -> Optional[Path]:
     """Synthesizes text via the ElevenLabs API and plays the result.
+
+    Requests raw PCM (not mp3) so the output is a plain wav file, same as
+    Piper's — lets waveform_window.py's FFT envelope read it directly with
+    the stdlib wave module, no decode dependency needed.
 
     Falls back to Piper on any failure (network error, bad key, exhausted
     quota) — a paid-API hiccup shouldn't mean Computron goes silent, only
     less natural-sounding for that one reply.
     """
-    out_mp3 = Path(tempfile.gettempdir()) / "ev_output.mp3"
+    out_wav = Path(tempfile.gettempdir()) / "ev_output.wav"
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}"
     headers = {
         "xi-api-key": config.ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
-        "Accept": "audio/mpeg",
     }
     payload = {
         "text": text,
@@ -158,13 +182,18 @@ def _speak_elevenlabs(text: str) -> Optional[Path]:
         # mechanism as the humor/sarcasm/bluntness dials.
         "voice_settings": {"speed": get_voice_speed()},
     }
+    params = {"output_format": f"pcm_{ELEVENLABS_PCM_RATE}"}
     try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        resp = requests.post(url, params=params, json=payload, headers=headers, timeout=30)
         resp.raise_for_status()
-        out_mp3.write_bytes(resp.content)
-        _play(out_mp3)
-        return out_mp3
-    except (requests.RequestException, OSError) as e:
+        with wave.open(str(out_wav), "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # ElevenLabs' pcm_* formats are 16-bit
+            wf.setframerate(ELEVENLABS_PCM_RATE)
+            wf.writeframes(resp.content)
+        _play(out_wav)
+        return out_wav
+    except (requests.RequestException, OSError, wave.Error) as e:
         print(f"[ElevenLabs failed ({e}) — falling back to Piper]")
         return _speak_piper(text)
 
