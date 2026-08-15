@@ -136,5 +136,4 @@ def start_server(app, port: int) -> ThreadingHTTPServer:
     httpd = ThreadingHTTPServer(("127.0.0.1", port), ComputronRequestHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
-    print(f"Computron HTTP bridge listening on http://127.0.0.1:{port} (local only)")
     return httpd

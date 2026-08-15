@@ -20,6 +20,14 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
+
+# This system's Python is linked against LibreSSL, not OpenSSL 1.1.1+, so
+# urllib3 (via requests) warns on import — true, but harmless for what
+# Computron actually does (a handful of HTTPS calls to ElevenLabs).
+# Filtered by message, not category: importing the warning's own class
+# would first execute urllib3/__init__.py, which is where it's raised —
+# too late to filter retroactively. Must run before `import requests`.
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 import requests
 import sounddevice as sd
 
@@ -42,8 +50,17 @@ COLOR_COMPUTRON = "\033[32m"  # green
 COLOR_DIM = "\033[2m"         # dim, for the cost tag
 COLOR_RESET = "\033[0m"
 
-print("Loading local speech-to-text model (first run downloads it, ~1 min)...")
+# Only worth telling the user about when it's actually slow — a cached
+# model loads in well under a second, so the notice is delayed and
+# cancelled if loading finishes first, rather than printing on every
+# single launch regardless of whether anything is actually downloading.
+_model_load_notice = threading.Timer(
+    1.0,
+    lambda: print("Loading local speech-to-text model (first run downloads it, ~1 min)..."),
+)
+_model_load_notice.start()
 whisper_model = WhisperModel("small.en", device="cpu", compute_type="int8")
+_model_load_notice.cancel()
 
 # Tracks the currently-playing afplay process (if any) so stop_speaking()
 # can interrupt it — e.g. pressing the push-to-talk hotkey again while

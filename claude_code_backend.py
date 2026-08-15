@@ -323,7 +323,7 @@ class ClaudeCodeSession:
         self._resumed = bool(resume_id)
         if resume_id:
             cmd += ["--resume", resume_id]
-            print(f"Resuming previous conversation ({resume_id[:8]}...)")
+            print("Resuming previous conversation...")
 
         # config.py's load_dotenv() puts ANTHROPIC_API_KEY into this process's
         # env; strip it (and any auth token) before spawning so `claude` falls

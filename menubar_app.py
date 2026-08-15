@@ -18,6 +18,19 @@ System Settings -> Privacy & Security -> Accessibility.
 
 Run: python menubar_app.py
 """
+import os
+
+# Set before any other import, so it's already in the environment by the
+# time whatever in the dependency stack first creates a multiprocessing
+# semaphore (not pinned down to one specific library — reproduced the
+# identical warning from a bare multiprocessing.Semaphore() too). Harmless
+# either way: the semaphore genuinely gets cleaned up, this only silences
+# the resource_tracker subprocess's own report of having done so.
+# rumps.quit_application() terminates the app natively (not a clean Python
+# interpreter shutdown), which is what surfaces this at quit specifically.
+os.environ.setdefault("PYTHONWARNINGS", "ignore::UserWarning:multiprocessing.resource_tracker:")
+
+import logging
 import tempfile
 import threading
 import time
@@ -29,6 +42,14 @@ import rumps
 import sounddevice as sd
 from pynput import keyboard
 from PyObjCTools import AppHelper
+
+# pynput logs "This process is not trusted!" at WARNING the moment its
+# global listener starts, checked via the real AXIsProcessTrusted() API —
+# not a false positive in general, but on this machine Accessibility is
+# already granted and the hotkeys work fine (confirmed live), so the
+# message is stale noise here. .exception()/.error() calls (real problems)
+# still get through; only .warning()/.info()/.debug() are silenced.
+logging.getLogger("pynput").setLevel(logging.ERROR)
 
 import config
 import waveform_settings
