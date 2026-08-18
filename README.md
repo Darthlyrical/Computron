@@ -56,7 +56,7 @@ curl -L -o voices/en_US-lessac-medium.onnx.json \
 `piper` console script as long as the venv is activated.
 
 ### 4. (Optional) Point it at a vault
-By default Computron looks for an Obsidian vault at `~/Obsidian/The Triforce` — that's specific to the original build, not required. Set `COMPUTRON_VAULT_PATH` in `.env` to point at your own vault (or any folder), or just leave it unset/pointed at nothing: Computron detects a missing vault automatically and runs from its own project directory instead, no crash, no vault required to use it.
+By default Computron looks for an Obsidian vault at a path hardcoded for the original build, not required. Set `COMPUTRON_VAULT_PATH` in `.env` to point at your own vault (or any folder), or just leave it unset/pointed at nothing: Computron detects a missing vault automatically and runs from its own project directory instead, no crash, no vault required to use it.
 
 ### 5. Log into Claude Code (if you haven't already)
 Computron authenticates through whatever `claude` is logged into on this machine —
@@ -109,7 +109,7 @@ search) that it stops the silent write without affecting memory-bank
 
 Ideas worth asking it given your projects — no code changes needed, since it
 can already read the vault and (with confirmation) write to it:
-- "What's the status of PulseTag?"
+- "What's the status of my [project name]?"
 - "What am I supposed to be working on today?" (reads `Daily Structure.md`)
 - "Summarize my last journal entry"
 - "Add a note to my next-steps list about X" (will ask to confirm first)
